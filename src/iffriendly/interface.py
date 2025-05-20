@@ -2,6 +2,7 @@ from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 from pyroute2 import IPRoute
 import os
+from mac_vendor_lookup import MacLookup
 
 class InterfaceMetadata(BaseModel):
     system_name: str
@@ -14,10 +15,19 @@ class InterfaceMetadata(BaseModel):
     extra: Dict[str, Any] = {}
 
 
+def get_manufacturer(mac: Optional[str]) -> Optional[str]:
+    if not mac:
+        return None
+    try:
+        return MacLookup().lookup(mac)
+    except Exception:
+        return None
+
+
 def get_interface_list() -> Dict[str, InterfaceMetadata]:
     """
     Discover all network interfaces and return a dict keyed by system name.
-    Each value is an InterfaceMetadata object containing low-level info.
+    Each value is an InterfaceMetadata object containing low-level info and manufacturer.
     """
     ipr = IPRoute()
     interfaces = {}
@@ -32,6 +42,8 @@ def get_interface_list() -> Dict[str, InterfaceMetadata]:
             device_path = None
         # MAC address
         mac_address = attrs.get('IFLA_ADDRESS')
+        # Manufacturer
+        manufacturer = get_manufacturer(mac_address)
         # IP addresses
         ip_addresses = []
         idx = link['index']
@@ -44,7 +56,8 @@ def get_interface_list() -> Dict[str, InterfaceMetadata]:
             system_name=system_name,
             device_path=device_path,
             mac_address=mac_address,
-            ip_addresses=ip_addresses
+            ip_addresses=ip_addresses,
+            manufacturer=manufacturer
         )
     ipr.close()
     return interfaces 
