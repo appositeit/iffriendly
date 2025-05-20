@@ -3,7 +3,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 
 import pytest
-from src.iffriendly.interface import get_interface_list, InterfaceMetadata
+from src.iffriendly.interface import get_interface_list, InterfaceMetadata, get_manufacturer
 
 def test_get_interface_list_not_implemented():
     # This test is now obsolete, but kept for reference
@@ -35,4 +35,18 @@ def test_get_interface_list_basic():
         assert meta.system_name == name
         # MAC address may be None for loopback, but should be a string or None
         assert meta.mac_address is None or isinstance(meta.mac_address, str)
-        assert isinstance(meta.ip_addresses, list) 
+        assert isinstance(meta.ip_addresses, list)
+
+def test_manufacturer_lookup():
+    # Test that manufacturer lookup does not raise and returns a string or None
+    interfaces = get_interface_list()
+    for meta in interfaces.values():
+        if meta.mac_address and meta.mac_address != '00:00:00:00:00:00':
+            manufacturer = get_manufacturer(meta.mac_address)
+            assert manufacturer is None or isinstance(manufacturer, str)
+
+def test_connection_method_heuristics():
+    interfaces = get_interface_list()
+    valid_methods = {None, 'USB', 'PCIe', 'Platform', 'Other'}
+    for meta in interfaces.values():
+        assert meta.connection_method in valid_methods 

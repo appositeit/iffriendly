@@ -24,10 +24,22 @@ def get_manufacturer(mac: Optional[str]) -> Optional[str]:
         return None
 
 
+def get_connection_method(device_path: Optional[str]) -> Optional[str]:
+    if not device_path:
+        return None
+    if '/usb' in device_path:
+        return 'USB'
+    if '/pci' in device_path:
+        return 'PCIe'
+    if '/platform' in device_path:
+        return 'Platform'
+    return 'Other'
+
+
 def get_interface_list() -> Dict[str, InterfaceMetadata]:
     """
     Discover all network interfaces and return a dict keyed by system name.
-    Each value is an InterfaceMetadata object containing low-level info and manufacturer.
+    Each value is an InterfaceMetadata object containing low-level info, manufacturer, and connection method.
     """
     ipr = IPRoute()
     interfaces = {}
@@ -40,10 +52,14 @@ def get_interface_list() -> Dict[str, InterfaceMetadata]:
         device_path = f"/sys/class/net/{system_name}/device"
         if not os.path.exists(device_path):
             device_path = None
+        else:
+            device_path = os.path.realpath(device_path)
         # MAC address
         mac_address = attrs.get('IFLA_ADDRESS')
         # Manufacturer
         manufacturer = get_manufacturer(mac_address)
+        # Connection method
+        connection_method = get_connection_method(device_path)
         # IP addresses
         ip_addresses = []
         idx = link['index']
@@ -57,7 +73,8 @@ def get_interface_list() -> Dict[str, InterfaceMetadata]:
             device_path=device_path,
             mac_address=mac_address,
             ip_addresses=ip_addresses,
-            manufacturer=manufacturer
+            manufacturer=manufacturer,
+            connection_method=connection_method
         )
     ipr.close()
     return interfaces 
