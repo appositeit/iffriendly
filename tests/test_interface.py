@@ -57,4 +57,13 @@ def test_udevadm_extra_metadata():
         assert isinstance(meta.extra, dict)
         if meta.extra:
             for k in meta.extra.keys():
-                assert k.startswith('ID_') 
+                assert k.startswith('ID_')
+
+def test_friendly_name_generation():
+    interfaces = get_interface_list()
+    for name, meta in interfaces.items():
+        assert isinstance(meta.friendly_name, str)
+        assert meta.friendly_name
+        # If we have manufacturer, model, or connection method, friendly_name should not just be the system name
+        if meta.manufacturer or meta.connection_method or meta.extra.get('ID_MODEL'):
+            assert meta.friendly_name != name 

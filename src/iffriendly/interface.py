@@ -55,10 +55,59 @@ def get_udevadm_info(device_path: Optional[str]) -> Dict[str, Any]:
         return {}
 
 
+def generate_friendly_name(system_name: str, manufacturer: Optional[str], connection_method: Optional[str], extra: Dict[str, Any]) -> str:
+    # Prefer descriptive names based on connection, manufacturer, and model
+    model = extra.get('ID_MODEL', '')
+    vendor = extra.get('ID_VENDOR', '')
+    bus = extra.get('ID_BUS', '')
+    # WiFi
+    if 'wlan' in system_name or 'wifi' in system_name.lower():
+        if connection_method == 'USB':
+            if manufacturer:
+                return f"{manufacturer} USB WiFi Adapter"
+            return "USB WiFi Adapter"
+        if connection_method == 'PCIe':
+            if manufacturer:
+                return f"Internal {manufacturer} WiFi"
+            return "Internal WiFi"
+        return "WiFi Adapter"
+    # Ethernet
+    if 'eth' in system_name or 'en' in system_name:
+        if connection_method == 'USB':
+            if manufacturer:
+                return f"{manufacturer} USB Ethernet Adapter"
+            return "USB Ethernet Adapter"
+        if connection_method == 'PCIe':
+            if manufacturer:
+                return f"Internal {manufacturer} Ethernet"
+            return "Internal Ethernet"
+        return "Ethernet Adapter"
+    # Bluetooth
+    if 'bluetooth' in system_name or bus == 'bluetooth':
+        if manufacturer:
+            return f"{manufacturer} Bluetooth Adapter"
+        return "Bluetooth Adapter"
+    # Tethered phone
+    if 'rndis' in system_name or 'usb' in system_name:
+        if vendor and model:
+            return f"USB tethered {vendor} {model}"
+        if manufacturer:
+            return f"USB tethered {manufacturer} device"
+        return "USB tethered device"
+    # Fallbacks
+    if manufacturer and model:
+        return f"{manufacturer} {model} ({system_name})"
+    if manufacturer:
+        return f"{manufacturer} device ({system_name})"
+    if model:
+        return f"{model} ({system_name})"
+    return system_name
+
+
 def get_interface_list() -> Dict[str, InterfaceMetadata]:
     """
     Discover all network interfaces and return a dict keyed by system name.
-    Each value is an InterfaceMetadata object containing low-level info, manufacturer, connection method, and extra metadata from udevadm.
+    Each value is an InterfaceMetadata object containing low-level info, manufacturer, connection method, extra metadata, and a friendly name.
     """
     ipr = IPRoute()
     interfaces = {}
@@ -89,6 +138,8 @@ def get_interface_list() -> Dict[str, InterfaceMetadata]:
                 ip_addresses.append(ip)
         # Extra metadata from udevadm
         extra = get_udevadm_info(device_path)
+        # Friendly name
+        friendly_name = generate_friendly_name(system_name, manufacturer, connection_method, extra)
         interfaces[system_name] = InterfaceMetadata(
             system_name=system_name,
             device_path=device_path,
@@ -96,6 +147,7 @@ def get_interface_list() -> Dict[str, InterfaceMetadata]:
             ip_addresses=ip_addresses,
             manufacturer=manufacturer,
             connection_method=connection_method,
+            friendly_name=friendly_name,
             extra=extra
         )
     ipr.close()
