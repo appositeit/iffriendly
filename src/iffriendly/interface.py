@@ -13,9 +13,25 @@ This module provides the core interface discovery and metadata enrichment logic.
 Extensibility:
 - Additional metadata enrichment functions can be registered via register_enricher().
 - Each enricher is called with (system_name, meta: InterfaceMetadata) and should return a dict of updates to apply to the InterfaceMetadata.
+
+Example usage:
+    from iffriendly.interface import get_interface_list, register_enricher
+
+    # Register a custom enricher
+    def add_custom_field(system_name, meta):
+        return {'extra': {**meta.extra, 'custom': 'value'}}
+    register_enricher(add_custom_field)
+
+    # Get all interfaces
+    interfaces = get_interface_list()
+    for name, meta in interfaces.items():
+        print(f"{name}: {meta.friendly_name} ({meta.connection_method})")
 """
 
 class InterfaceMetadata(BaseModel):
+    """
+    Data model for network interface metadata.
+    """
     system_name: str
     device_path: Optional[str] = None
     mac_address: Optional[str] = None
@@ -29,10 +45,18 @@ class InterfaceMetadata(BaseModel):
 enrichers: List[Callable[[str, InterfaceMetadata], Dict[str, Any]]] = []
 
 def register_enricher(func: Callable[[str, InterfaceMetadata], Dict[str, Any]]):
+    """
+    Register a metadata enrichment function.
+    The function should take (system_name, meta: InterfaceMetadata) and return a dict of updates.
+    """
     enrichers.append(func)
 
 
 def get_manufacturer(mac: Optional[str]) -> Optional[str]:
+    """
+    Look up the manufacturer for a given MAC address using mac-vendor-lookup.
+    Returns the manufacturer name or None if not found.
+    """
     if not mac:
         return None
     try:
@@ -42,6 +66,9 @@ def get_manufacturer(mac: Optional[str]) -> Optional[str]:
 
 
 def get_connection_method(device_path: Optional[str]) -> Optional[str]:
+    """
+    Heuristically determine the connection method (USB, PCIe, Platform, Other) from the device path.
+    """
     if not device_path:
         return None
     if '/usb' in device_path:
@@ -54,6 +81,10 @@ def get_connection_method(device_path: Optional[str]) -> Optional[str]:
 
 
 def get_udevadm_info(device_path: Optional[str]) -> Dict[str, Any]:
+    """
+    Collect additional metadata from udevadm for the given device path.
+    Returns a dict of ID_* fields.
+    """
     if not device_path:
         return {}
     try:
@@ -72,11 +103,12 @@ def get_udevadm_info(device_path: Optional[str]) -> Dict[str, Any]:
 
 
 def generate_friendly_name(system_name: str, manufacturer: Optional[str], connection_method: Optional[str], extra: Dict[str, Any]) -> str:
-    # Prefer descriptive names based on connection, manufacturer, and model
+    """
+    Generate a human-friendly name for the interface using available metadata.
+    """
     model = extra.get('ID_MODEL', '')
     vendor = extra.get('ID_VENDOR', '')
     bus = extra.get('ID_BUS', '')
-    # WiFi
     if 'wlan' in system_name or 'wifi' in system_name.lower():
         if connection_method == 'USB':
             if manufacturer:
@@ -87,7 +119,6 @@ def generate_friendly_name(system_name: str, manufacturer: Optional[str], connec
                 return f"Internal {manufacturer} WiFi"
             return "Internal WiFi"
         return "WiFi Adapter"
-    # Ethernet
     if 'eth' in system_name or 'en' in system_name:
         if connection_method == 'USB':
             if manufacturer:
@@ -98,19 +129,16 @@ def generate_friendly_name(system_name: str, manufacturer: Optional[str], connec
                 return f"Internal {manufacturer} Ethernet"
             return "Internal Ethernet"
         return "Ethernet Adapter"
-    # Bluetooth
     if 'bluetooth' in system_name or bus == 'bluetooth':
         if manufacturer:
             return f"{manufacturer} Bluetooth Adapter"
         return "Bluetooth Adapter"
-    # Tethered phone
     if 'rndis' in system_name or 'usb' in system_name:
         if vendor and model:
             return f"USB tethered {vendor} {model}"
         if manufacturer:
             return f"USB tethered {manufacturer} device"
         return "USB tethered device"
-    # Fallbacks
     if manufacturer and model:
         return f"{manufacturer} {model} ({system_name})"
     if manufacturer:
@@ -133,19 +161,14 @@ def get_interface_list() -> Dict[str, InterfaceMetadata]:
         system_name = attrs.get('IFLA_IFNAME')
         if not system_name:
             continue
-        # Device path
         device_path = f"/sys/class/net/{system_name}/device"
         if not os.path.exists(device_path):
             device_path = None
         else:
             device_path = os.path.realpath(device_path)
-        # MAC address
         mac_address = attrs.get('IFLA_ADDRESS')
-        # Manufacturer
         manufacturer = get_manufacturer(mac_address)
-        # Connection method
         connection_method = get_connection_method(device_path)
-        # IP addresses
         ip_addresses = []
         idx = link['index']
         for addr in ipr.get_addr(index=idx):
@@ -153,9 +176,7 @@ def get_interface_list() -> Dict[str, InterfaceMetadata]:
             ip = ip_attrs.get('IFA_ADDRESS')
             if ip:
                 ip_addresses.append(ip)
-        # Extra metadata from udevadm
         extra = get_udevadm_info(device_path)
-        # Friendly name
         friendly_name = generate_friendly_name(system_name, manufacturer, connection_method, extra)
         meta = InterfaceMetadata(
             system_name=system_name,

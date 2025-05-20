@@ -51,4 +51,24 @@ The `iffriendly` library is a Python library designed to provide human-friendly 
 - Implementation plan (see `doc/implementation_plan.md`)
 - Initial library scaffolding and core function (`get_interface_list`)
 - Unit tests for all modules
-- Progress updates and documentation 
+- Progress updates and documentation
+
+## Extensibility and Custom Metadata Enrichers
+
+The `iffriendly` library is designed to be extensible. You can add custom metadata enrichment logic by registering additional enrichment functions using `register_enricher`. Each enricher is called with `(system_name, meta: InterfaceMetadata)` and should return a dict of updates to apply to the interface metadata.
+
+**Example:**
+
+```python
+from iffriendly.interface import get_interface_list, register_enricher
+
+def add_custom_field(system_name, meta):
+    return {'extra': {**meta.extra, 'custom': 'value'}}
+register_enricher(add_custom_field)
+
+interfaces = get_interface_list()
+for name, meta in interfaces.items():
+    print(f"{name}: {meta.friendly_name} ({meta.connection_method})")
+```
+
+This allows you to easily extend the metadata available for each interface, integrate with new data sources, or add custom heuristics for your environment. 

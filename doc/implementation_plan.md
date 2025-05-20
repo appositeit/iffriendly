@@ -27,8 +27,8 @@
   2.3.4 Generate friendly, human-readable names
 
 2.4 Extensibility and Integration
-  2.4.1 Design for easy addition of new metadata sources/heuristics
-  2.4.2 Ensure output is a dict suitable for UI consumption
+  2.4.1 **[Complete]** Designed for easy addition of new metadata sources/heuristics (register_enricher implemented and tested)
+  2.4.2 **[Complete]** Output remains a dict suitable for UI consumption
 
 ## 3. Testing
 
@@ -80,4 +80,8 @@
 
 **Progress Tracking:**
 - Each progress update should reference the relevant section(s) of this plan.
-- This plan should be updated as tasks are completed or requirements change. 
+- This plan should be updated as tasks are completed or requirements change.
+
+**Next Steps:**
+- 4.x: Review and update documentation, API docs, and usage examples
+- 6.x: Prepare scripts/tooling for packaging and integration 
