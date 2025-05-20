@@ -1,9 +1,19 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Callable
 from pydantic import BaseModel
 from pyroute2 import IPRoute
 import os
 from mac_vendor_lookup import MacLookup
 import subprocess
+
+"""
+iffriendly.interface
+
+This module provides the core interface discovery and metadata enrichment logic.
+
+Extensibility:
+- Additional metadata enrichment functions can be registered via register_enricher().
+- Each enricher is called with (system_name, meta: InterfaceMetadata) and should return a dict of updates to apply to the InterfaceMetadata.
+"""
 
 class InterfaceMetadata(BaseModel):
     system_name: str
@@ -14,6 +24,12 @@ class InterfaceMetadata(BaseModel):
     connection_method: Optional[str] = None
     friendly_name: Optional[str] = None
     extra: Dict[str, Any] = {}
+
+# List of enrichment functions
+enrichers: List[Callable[[str, InterfaceMetadata], Dict[str, Any]]] = []
+
+def register_enricher(func: Callable[[str, InterfaceMetadata], Dict[str, Any]]):
+    enrichers.append(func)
 
 
 def get_manufacturer(mac: Optional[str]) -> Optional[str]:
@@ -108,6 +124,7 @@ def get_interface_list() -> Dict[str, InterfaceMetadata]:
     """
     Discover all network interfaces and return a dict keyed by system name.
     Each value is an InterfaceMetadata object containing low-level info, manufacturer, connection method, extra metadata, and a friendly name.
+    Additional enrichers registered via register_enricher() are applied to each interface.
     """
     ipr = IPRoute()
     interfaces = {}
@@ -140,7 +157,7 @@ def get_interface_list() -> Dict[str, InterfaceMetadata]:
         extra = get_udevadm_info(device_path)
         # Friendly name
         friendly_name = generate_friendly_name(system_name, manufacturer, connection_method, extra)
-        interfaces[system_name] = InterfaceMetadata(
+        meta = InterfaceMetadata(
             system_name=system_name,
             device_path=device_path,
             mac_address=mac_address,
@@ -150,5 +167,11 @@ def get_interface_list() -> Dict[str, InterfaceMetadata]:
             friendly_name=friendly_name,
             extra=extra
         )
+        # Apply enrichers
+        for enricher in enrichers:
+            updates = enricher(system_name, meta)
+            for k, v in updates.items():
+                setattr(meta, k, v)
+        interfaces[system_name] = meta
     ipr.close()
     return interfaces 

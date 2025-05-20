@@ -3,7 +3,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 
 import pytest
-from src.iffriendly.interface import get_interface_list, InterfaceMetadata, get_manufacturer
+from src.iffriendly.interface import get_interface_list, InterfaceMetadata, get_manufacturer, register_enricher
 
 def test_get_interface_list_not_implemented():
     # This test is now obsolete, but kept for reference
@@ -66,4 +66,13 @@ def test_friendly_name_generation():
         assert meta.friendly_name
         # If we have manufacturer, model, or connection method, friendly_name should not just be the system name
         if meta.manufacturer or meta.connection_method or meta.extra.get('ID_MODEL'):
-            assert meta.friendly_name != name 
+            assert meta.friendly_name != name
+
+def test_register_enricher():
+    # Register a dummy enricher that adds a custom field
+    def dummy_enricher(system_name, meta):
+        return {'extra': {**meta.extra, 'dummy_field': 'dummy_value'}}
+    register_enricher(dummy_enricher)
+    interfaces = get_interface_list()
+    for meta in interfaces.values():
+        assert 'dummy_field' in meta.extra and meta.extra['dummy_field'] == 'dummy_value' 
