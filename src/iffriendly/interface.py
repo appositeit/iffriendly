@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from pyroute2 import IPRoute
 import os
 from mac_vendor_lookup import MacLookup
+import subprocess
 
 class InterfaceMetadata(BaseModel):
     system_name: str
@@ -36,10 +37,28 @@ def get_connection_method(device_path: Optional[str]) -> Optional[str]:
     return 'Other'
 
 
+def get_udevadm_info(device_path: Optional[str]) -> Dict[str, Any]:
+    if not device_path:
+        return {}
+    try:
+        result = subprocess.run([
+            'udevadm', 'info', '--query=property', device_path
+        ], capture_output=True, text=True, timeout=2)
+        info = {}
+        for line in result.stdout.splitlines():
+            if '=' in line:
+                k, v = line.split('=', 1)
+                if k.startswith('ID_'):
+                    info[k] = v
+        return info
+    except Exception:
+        return {}
+
+
 def get_interface_list() -> Dict[str, InterfaceMetadata]:
     """
     Discover all network interfaces and return a dict keyed by system name.
-    Each value is an InterfaceMetadata object containing low-level info, manufacturer, and connection method.
+    Each value is an InterfaceMetadata object containing low-level info, manufacturer, connection method, and extra metadata from udevadm.
     """
     ipr = IPRoute()
     interfaces = {}
@@ -68,13 +87,16 @@ def get_interface_list() -> Dict[str, InterfaceMetadata]:
             ip = ip_attrs.get('IFA_ADDRESS')
             if ip:
                 ip_addresses.append(ip)
+        # Extra metadata from udevadm
+        extra = get_udevadm_info(device_path)
         interfaces[system_name] = InterfaceMetadata(
             system_name=system_name,
             device_path=device_path,
             mac_address=mac_address,
             ip_addresses=ip_addresses,
             manufacturer=manufacturer,
-            connection_method=connection_method
+            connection_method=connection_method,
+            extra=extra
         )
     ipr.close()
     return interfaces 

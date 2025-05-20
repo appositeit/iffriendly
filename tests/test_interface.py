@@ -49,4 +49,12 @@ def test_connection_method_heuristics():
     interfaces = get_interface_list()
     valid_methods = {None, 'USB', 'PCIe', 'Platform', 'Other'}
     for meta in interfaces.values():
-        assert meta.connection_method in valid_methods 
+        assert meta.connection_method in valid_methods
+
+def test_udevadm_extra_metadata():
+    interfaces = get_interface_list()
+    for meta in interfaces.values():
+        assert isinstance(meta.extra, dict)
+        if meta.extra:
+            for k in meta.extra.keys():
+                assert k.startswith('ID_') 
