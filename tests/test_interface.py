@@ -6,8 +6,8 @@ import pytest
 from src.iffriendly.interface import get_interface_list, InterfaceMetadata
 
 def test_get_interface_list_not_implemented():
-    with pytest.raises(NotImplementedError):
-        get_interface_list()
+    # This test is now obsolete, but kept for reference
+    pass
 
 def test_interface_metadata_instantiation():
     data = {
@@ -23,4 +23,16 @@ def test_interface_metadata_instantiation():
     iface = InterfaceMetadata(**data)
     assert iface.system_name == 'eth0'
     assert iface.friendly_name == 'Internal Ethernet'
-    assert iface.extra['speed'] == '1Gbps' 
+    assert iface.extra['speed'] == '1Gbps'
+
+def test_get_interface_list_basic():
+    interfaces = get_interface_list()
+    assert isinstance(interfaces, dict)
+    # There should be at least one interface (lo is always present on Linux)
+    assert interfaces, 'No interfaces found.'
+    for name, meta in interfaces.items():
+        assert isinstance(meta, InterfaceMetadata)
+        assert meta.system_name == name
+        # MAC address may be None for loopback, but should be a string or None
+        assert meta.mac_address is None or isinstance(meta.mac_address, str)
+        assert isinstance(meta.ip_addresses, list) 
