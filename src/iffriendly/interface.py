@@ -102,50 +102,44 @@ def get_udevadm_info(device_path: Optional[str]) -> Dict[str, Any]:
         return {}
 
 
-def generate_friendly_name(system_name: str, manufacturer: Optional[str], connection_method: Optional[str], extra: Dict[str, Any]) -> str:
+def classify_device_type(system_name: str, extra: Dict[str, Any]) -> str:
     """
-    Generate a human-friendly name for the interface using available metadata.
+    Classify the device type: WiFi, Ethernet, Bluetooth, Bridge, Tunnel, Loopback, Docker, etc.
     """
-    model = extra.get('ID_MODEL', '')
-    vendor = extra.get('ID_VENDOR', '')
-    bus = extra.get('ID_BUS', '')
-    if 'wlan' in system_name or 'wifi' in system_name.lower():
-        if connection_method == 'USB':
-            if manufacturer:
-                return f"{manufacturer} USB WiFi Adapter"
-            return "USB WiFi Adapter"
-        if connection_method == 'PCIe':
-            if manufacturer:
-                return f"Internal {manufacturer} WiFi"
-            return "Internal WiFi"
-        return "WiFi Adapter"
-    if 'eth' in system_name or 'en' in system_name:
-        if connection_method == 'USB':
-            if manufacturer:
-                return f"{manufacturer} USB Ethernet Adapter"
-            return "USB Ethernet Adapter"
-        if connection_method == 'PCIe':
-            if manufacturer:
-                return f"Internal {manufacturer} Ethernet"
-            return "Internal Ethernet"
-        return "Ethernet Adapter"
-    if 'bluetooth' in system_name or bus == 'bluetooth':
-        if manufacturer:
-            return f"{manufacturer} Bluetooth Adapter"
-        return "Bluetooth Adapter"
-    if 'rndis' in system_name or 'usb' in system_name:
-        if vendor and model:
-            return f"USB tethered {vendor} {model}"
-        if manufacturer:
-            return f"USB tethered {manufacturer} device"
-        return "USB tethered device"
-    if manufacturer and model:
-        return f"{manufacturer} {model} ({system_name})"
-    if manufacturer:
-        return f"{manufacturer} device ({system_name})"
-    if model:
-        return f"{model} ({system_name})"
-    return system_name
+    name = system_name.lower()
+    if name == 'lo':
+        return 'Loopback'
+    if name.startswith('wl') or 'wifi' in name or 'wlan' in name:
+        return 'WiFi'
+    if name.startswith('eth') or name.startswith('en'):
+        return 'Ethernet'
+    if name.startswith('br'):
+        return 'Bridge'
+    if name.startswith('docker'):
+        return 'Docker Network'
+    if name.startswith('veth'):
+        return 'Ethernet'
+    if name.startswith('tun') or name.startswith('tap'):
+        return 'Tunnel'
+    if name.startswith('tailscale'):
+        return 'Tailscale Network'
+    if 'bluetooth' in name or extra.get('ID_BUS') == 'bluetooth':
+        return 'Bluetooth'
+    return 'Other'
+
+
+def is_virtual(system_name: str, device_path: Optional[str], device_type: str) -> bool:
+    """
+    Heuristically determine if the interface is virtual.
+    """
+    if device_path is None:
+        # No physical device path
+        if device_type in {'Bridge', 'Docker Network', 'Tunnel', 'Tailscale Network', 'Loopback'}:
+            return False  # These are always virtual by nature, but don't need 'Virtual' prefix
+        if device_type == 'Ethernet' and (system_name.startswith('veth') or system_name.startswith('ve-')):
+            return True
+        return True
+    return False
 
 
 def get_interface_list() -> Dict[str, InterfaceMetadata]:
@@ -156,6 +150,7 @@ def get_interface_list() -> Dict[str, InterfaceMetadata]:
     """
     ipr = IPRoute()
     interfaces = {}
+    # First pass: collect all metadata
     for link in ipr.get_links():
         attrs = dict(link.get('attrs', []))
         system_name = attrs.get('IFLA_IFNAME')
@@ -177,7 +172,8 @@ def get_interface_list() -> Dict[str, InterfaceMetadata]:
             if ip:
                 ip_addresses.append(ip)
         extra = get_udevadm_info(device_path)
-        friendly_name = generate_friendly_name(system_name, manufacturer, connection_method, extra)
+        device_type = classify_device_type(system_name, extra)
+        virtual = is_virtual(system_name, device_path, device_type)
         meta = InterfaceMetadata(
             system_name=system_name,
             device_path=device_path,
@@ -185,14 +181,80 @@ def get_interface_list() -> Dict[str, InterfaceMetadata]:
             ip_addresses=ip_addresses,
             manufacturer=manufacturer,
             connection_method=connection_method,
-            friendly_name=friendly_name,
+            friendly_name=None,  # To be filled in second pass
             extra=extra
         )
-        # Apply enrichers
+        # Attach classification for naming
+        meta.extra['device_type'] = device_type
+        meta.extra['virtual'] = virtual
+        meta.extra['internal_external'] = (
+            'Internal' if connection_method in ('PCIe', 'Platform') else 'External' if connection_method == 'USB' else None
+        )
+        interfaces[system_name] = meta
+    ipr.close()
+
+    # Second pass: group and generate friendly names
+    # Group by (virtual, internal_external, device_type)
+    from collections import defaultdict, Counter
+    groups = defaultdict(list)
+    for meta in interfaces.values():
+        key = (
+            meta.extra['virtual'],
+            meta.extra['internal_external'],
+            meta.extra['device_type']
+        )
+        groups[key].append(meta)
+
+    # For each group, determine if manufacturer or connection type or numbering is needed
+    for group in groups.values():
+        # Count manufacturers and connection types
+        manu_counter = Counter(m.manufacturer for m in group if m.manufacturer)
+        conn_counter = Counter(m.connection_method for m in group if m.connection_method)
+        # If more than one manufacturer, use manufacturer in name
+        manu_needed = len([m for m in group if m.manufacturer]) > 1 and len(set(m.manufacturer for m in group if m.manufacturer)) > 1
+        # If more than one connection type, use connection type in name
+        conn_needed = len(set(m.connection_method for m in group if m.connection_method)) > 1
+        # If more than one device in group, numbering needed
+        numbering_needed = len(group) > 1
+        # If all manufacturers are None or the same, don't use
+        for i, meta in enumerate(group):
+            parts = []
+            # Virtual prefix only for virtualized physical device types
+            if meta.extra['virtual'] and meta.extra['device_type'] in {'Ethernet', 'WiFi', 'Bluetooth'}:
+                parts.append('Virtual')
+            # Internal/External
+            if meta.extra['internal_external']:
+                parts.append(meta.extra['internal_external'])
+            # Manufacturer
+            if manu_needed and meta.manufacturer:
+                parts.append(meta.manufacturer)
+            # Connection type
+            if conn_needed and meta.connection_method:
+                parts.append(meta.connection_method)
+            # Device type
+            parts.append(meta.extra['device_type'])
+            # Numbering
+            if numbering_needed:
+                # Only number if there are otherwise identical names
+                base_name = ' '.join(parts)
+                # Count how many have the same base name
+                base_names = [' '.join([
+                    'Virtual' if m.extra['virtual'] and m.extra['device_type'] in {'Ethernet', 'WiFi', 'Bluetooth'} else '',
+                    m.extra['internal_external'] or '',
+                    m.manufacturer if manu_needed and m.manufacturer else '',
+                    m.connection_method if conn_needed and m.connection_method else '',
+                    m.extra['device_type']
+                ]).strip() for m in group]
+                if base_names.count(base_name) > 1:
+                    parts.append(f"#{base_names[:i+1].count(base_name)}")
+            meta.friendly_name = ' '.join(parts)
+            # Fallback: if name is empty, use device type + system_name
+            if not meta.friendly_name.strip():
+                meta.friendly_name = f"{meta.extra['device_type']} {meta.system_name}"
+    # Apply enrichers
+    for system_name, meta in interfaces.items():
         for enricher in enrichers:
             updates = enricher(system_name, meta)
             for k, v in updates.items():
                 setattr(meta, k, v)
-        interfaces[system_name] = meta
-    ipr.close()
     return interfaces 

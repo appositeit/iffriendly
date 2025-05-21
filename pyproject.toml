@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "iffriendly"
+version = "0.1.0"
+description = "Human-friendly names and metadata for Linux network interfaces"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { file = "LICENSE" }
+authors = [
+    { name = "jem", email = "" }
+]
+keywords = ["network", "interfaces", "linux", "metadata"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: System :: Networking",
+]
+dependencies = [
+    "pydantic>=2.0.0",
+    "pyroute2>=0.7.0",
+    "mac-vendor-lookup>=0.1.12"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "black>=24.0.0",
+    "isort>=5.13.0",
+    "mypy>=1.8.0",
+]
+
+[project.urls]
+Documentation = "https://github.com/jem/iffriendly#readme"
+Source = "https://github.com/jem/iffriendly"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/iffriendly"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --cov=iffriendly"
+
+[tool.black]
+line-length = 100
+target-version = ["py38"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+multi_line_output = 3 
